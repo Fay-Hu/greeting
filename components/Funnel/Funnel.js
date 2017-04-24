@@ -10,10 +10,20 @@ import {
   PlaneGeometry,
   MeshPhongMaterial,
   CylinderGeometry,
+  Line3,
   EdgesHelper,
+  EdgesGeometry,
+  LineBasicMaterial,
+  LineDashedMaterial,
+  LineSegments,
   FlatShading,
+  Geometry,
+  Vector3,
+  FontLoader,
+  TextGeometry,
   DoubleSide
 } from '../../libs/three.module'
+import TWEEN from '../../libs/tween'
 import {Component} from '../../core/Core'
 
 export default class Funnel extends Component {
@@ -26,6 +36,7 @@ export default class Funnel extends Component {
       width: 0,
       height: 0
     }
+    this.items = []
     this.init()
   }
 
@@ -35,7 +46,17 @@ export default class Funnel extends Component {
       height: 20,
       startY: 10,
       gutter: 1,
-      data: [0, 0, 0, 0, 0],
+      data: [{
+        label: "A"
+      }, {
+        label: "B"
+      }, {
+        label: "C"
+      }, {
+        label: "D"
+      }, {
+        label: "E"
+      }],
       colors: [0x156289, 0x6f60aa, 0x45b97c, 0x00ae9d, 0xfedcbd],
       radiusSegments: 4
     }
@@ -48,7 +69,7 @@ export default class Funnel extends Component {
     this.scene.fog = new Fog(0x23233f, 1, 300000)
     this.camera.position.z = 60
     this.rootGroup.rotation.y = Math.PI * 0.25
-    this.rootGroup.rotation.x = Math.PI * 0.062
+    this.rootGroup.rotation.x = Math.PI * 0.05
     this.renderer.setClearColor(new Color(0x000000))
     this.element.appendChild(this.renderer.domElement)
     this.resize()
@@ -70,12 +91,12 @@ export default class Funnel extends Component {
     plane.rotateX(-Math.PI / 2)
 
 
-    var light = new PointLight(this.options.colors[0], 4, 0);
-    light.position.set(0, 100, -60);
+    this.light = new PointLight(this.options.colors[0], 4, 0);
+    this.light.position.set(0, 150, -60);
 
-    this.scene.add(light)
+    this.scene.add(this.light)
     this.scene.add(plane)
-    return this;
+    return this
   }
 
   initGeometry() {
@@ -97,14 +118,14 @@ export default class Funnel extends Component {
       opts = this.options,
       itemLength = opts.data.length,
       itemHeight = (opts.height - (itemLength - 1) * opts.gutter) / itemLength,
-      alpha = Math.atan(opts.height / opts.width * 2),
+      alpha = Math.atan(opts.height / opts.width ),
       deltaW = opts.gutter / Math.tan(alpha)
 
     opts.data.forEach((v, i) => {
       var
         W = opts.width * (itemLength - i) / itemLength,
-        w = opts.width * (itemLength - i - 1) / itemLength
-
+        w = opts.width * (itemLength - i - 1) / itemLength,
+        y = opts.startY - (opts.gutter + itemHeight) * i - itemHeight / 2
       var mesh = new Mesh(new CylinderGeometry(i === 0 ? W : W - deltaW, w > 0 ? w : 0, itemHeight, opts.radiusSegments), new MeshPhongMaterial({
         color: 0x156289,
         emissive: opts.colors[i] || 0x156289,
@@ -113,21 +134,77 @@ export default class Funnel extends Component {
         side: DoubleSide,
         shading: FlatShading,
         wireframe: false
-      }));
-      var edges = new EdgesHelper(mesh, opts.colors[i])
-      mesh.position.y = opts.startY - (opts.gutter + itemHeight) * i
-      edges.position.y = opts.startY - (opts.gutter + itemHeight) * i
+      }))
+
+      var geometry = new Geometry();
+
+      if (i < itemLength - 1) {
+        geometry.vertices.push(
+          new Vector3(0, y - itemHeight * 1 / 3, W - 2/3*itemHeight/Math.tan(alpha) -1),
+          new Vector3(0, y - itemHeight * 1 / 3, W - 2/3*itemHeight/Math.tan(alpha) + 1),
+          new Vector3(0, y - itemHeight * 1 / 3, W - 2/3*itemHeight/Math.tan(alpha) + 1),
+          new Vector3(0, y - itemHeight * 3 / 2, W - (4/3*itemHeight + opts.gutter)/Math.tan(alpha) + 1),
+          new Vector3(0, y - itemHeight * 3 / 2, W - (4/3*itemHeight + opts.gutter)/Math.tan(alpha) + 1),
+          new Vector3(0, y - itemHeight * 3 / 2, W - (4/3*itemHeight + opts.gutter)/Math.tan(alpha) -1)
+        );
+        var material = new MeshPhongMaterial({
+          color: opts.colors[i]
+        })
+        new FontLoader().load('../../assets/fonts/genitilis_bold.typeface.json', (font) => {
+          var mesh = new Mesh(new TextGeometry(v.label, {
+            font: font,
+            size: 1,
+            height: 1
+          },material));
+          mesh.position.z = w +2
+          mesh.position.y = y - itemHeight -  opts.gutter + 0.5
+          mesh.rotation.y = -0.3*Math.PI
+          this.rootGroup.add(mesh)
+        })
+      }
+
+      var lineT = new LineSegments(geometry, new LineDashedMaterial({color: opts.colors[i], linewidth: 2}))
+      var edges = new EdgesGeometry(mesh.geometry)
+      var line = new LineSegments(edges, new LineDashedMaterial({color: opts.colors[i], linewidth: 2}));
+      mesh.position.y = y
+      line.position.y = y
+      this.items.push(mesh)
       this.rootGroup.add(mesh)
-      this.rootGroup.add(edges)
+      this.rootGroup.add(line)
+      this.rootGroup.add(lineT)
+
     })
   }
 
   update(now) {
-    requestAnimationFrame(() => {
-      this.update(this.clock.getElapsedTime())
-    })
+    var
+      _this = this,
+      duration = 1000,
+      coords = {y: 6, rotation: 0, thetaLength: 0}
 
-    this.renderer.render(this.scene, this.camera)
+    // //_this.rootGroup.position.y = coords.y
+    _this.rootGroup.rotation.y = coords.rotation
+    _this.renderer.render(_this.scene, _this.camera)
+    var tween = new TWEEN.Tween(coords)
+      .to({y: 0, rotation: Math.PI * 0.25, thetaLength: Math.PI * 2}, duration)
+      .onUpdate(function () {
+        //_this.rootGroup.position.y = this.y
+         _this.rootGroup.rotation.y = this.rotation
+
+        // _this.items.forEach((v)=>{
+        //   console.log(v.geometry)
+        //   v.geometry.thetaLength = this.thetaLength
+        // })
+        _this.renderer.render(_this.scene, _this.camera)
+      })
+      .delay(1000)
+      .start()
+
+    var _initFrame = (time) => {
+      requestAnimationFrame(_initFrame)
+      TWEEN.update(time)
+    }
+    requestAnimationFrame(_initFrame)
   }
 
 }
